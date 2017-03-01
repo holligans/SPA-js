@@ -18,7 +18,7 @@ spa.chat = (function(){
 	var
 		configMap = {
 			main_html: String()
-				+ 'div style="padding:1em; color:#fff;">'
+				+ '<div style="padding:1em; color:#fff;">'
 				+ 'Hello prink fuck'
 				+ '</div>',
 			setteable_map : {}
@@ -62,6 +62,6 @@ spa.chat = (function(){
     return{
     	configModule : configModule,
     	initModule : initModule
-    }
+    };
     // End public methods---------------------
-})
+}());
