@@ -18,7 +18,7 @@ spa.shell = (function(){
 	var
 	configMap = {
 		anchor_schema_map:{
-			chat : { open : true, closed : true }
+			chat : { opened : true, closed : true }
 		},
 		main_html : String()
 			+ '<div class="spa-shell-head">'
@@ -31,22 +31,17 @@ spa.shell = (function(){
 				+ '<div class="spa-shell-main-content"></div>'
 			+ '</div>'
 			+ '<div class="spa-shell-foot"></div>'
-			+ '<div class="spa-shell-chat"></div>'
 			+ '<div class="spa-shell-modal"></div>',
-		chat_extend_time: 400,
-		chat_retract_time: 300,
-		chat_extend_height: 350,
-        chat_retract_height:15,
-        chat_extended_title  : 'Click to retract',
-        chat_retracted_title : 'Click to extend'
+		resize_interval : 200,
     },
 	stateMap = {
-		$container : null,
+		$container : undefined,
 		anchor_map : {},
-		is_chat_retracted : true
+		resize_idto : undefined
 	},
 	jqueryMap = {},
-	copyAnchorMap, setJqueryMap, toggleChat, changeAnchorPart, onHashchange, onClickChat, initModule;
+	copyAnchorMap, setJqueryMap, changeAnchorPart, onHashchange, 
+	setChatAnchor, onClickChat, initModule, onResizer;
 	// END MODULE SCOPE VARIABLES
 
 	// BEGIN UTILITY METHODS
@@ -66,48 +61,8 @@ spa.shell = (function(){
 		var $container = stateMap.$container;
 		jqueryMap = {
 			$container: $container,
-			$chat: $container.find('.spa-shell-chat')
 		};
 	};
-	toggleChat = function(do_extend, callback){
-		var
-			px_chat_ht = jqueryMap.$chat.height(),
-			is_open = px_chat_ht === configMap.chat_extend_height,
-			is_closed = px_chat_ht === configMap.chat_retract_height,
-			is_sliding = !is_open && !is_closed;
-
-		// avoid race condition
-		if(is_sliding){return false;}
-
-		// Begin extend chat slider
-		if(do_extend){
-			jqueryMap.$chat.animate(
-			  { height: configMap.chat_extend_height},
-			  configMap.chat_extend_time,
-			  function(){ 
-			  	jqueryMap.$chat.attr('title', configMap.chat_extended_title);
-			  	stateMap.is_chat_retracted = false;
-			  	if(callback){callback(jqueryMap.$chat);}
-			  }
-			);
-			return true;
-		}
-		// End extend chat slider
-
-		// Begin retract chat slider
-		jqueryMap.$chat.animate(
-			{height: configMap.chat_retract_height},
-			configMap.chat_retract_time,
-			function(){
-				jqueryMap.$chat.attr('title', configMap.chat_retracted_title);
-				stateMap.is_chat_retracted = true;
-				if(callback){callback(jqueryMap.$chat);}
-			}
-		);
-		return true;
-		// End retract chat slider
-	}
-
 	// Begin DOM method/changeAnchorPart // Purpose: Change part of the URI anchor component
 	// Arguments: arg_map - the map describing what part of the URI anchor we want changed
 	// Returns: boolean true: the anchor portion of the URI was update --- false:the anchor portion cannot be updated
@@ -153,18 +108,22 @@ spa.shell = (function(){
 	// END DOM METHODS
 
 	// BEGIN EVENT HANDLERS
-	onClickChat = function(event){
- 		changeAnchorPart({
-    		chat: ( stateMap.is_chat_retracted ? 'open' : 'closed' )
-		});
- 		return false;
+	onResizer = function(){
+		if(stateMap.resize_idto){ return true;}
+		spa.chat.handleResizes();
+		stateMap.resize_idto = setTimeout(
+			function(){stateMap.resize_idto = undefined;},configMap.resize_interval
+		)
+		return true;
 	}
 
-	// Begin Event handler /onHashchange -- Purpose : Handles the hashchange event
+	// Begin Event handler /onHashchange -- 
+	// Purpose : Handles the hashchange event
 	onHashchange = function ( event ) {
   		var
     		anchor_map_previous = copyAnchorMap(),
     		anchor_map_proposed,
+    		is_ok = true,
     		_s_chat_previous, _s_chat_proposed,
     		s_chat_proposed;
   		// attempt to parse anchor
@@ -181,39 +140,61 @@ spa.shell = (function(){
   		if ( ! anchor_map_previous || _s_chat_previous !== _s_chat_proposed ){
     		s_chat_proposed = anchor_map_proposed.chat;
     		switch ( s_chat_proposed ) {
-      			case 'open' :
-        			toggleChat( true );
+      			case 'opened' :
+        			is_ok = spa.chat.setSliderPosition('opened');
       				break;
       			case 'closed' :
-        			toggleChat( false );
+        			is_ok = spa.chat.setSliderPosition('closed');
       				break;
       			default :
-        			toggleChat( false );
+        			spa.chat.setSliderPosition('closed');
         			delete anchor_map_proposed.chat;
         			$.uriAnchor.setAnchor( anchor_map_proposed, null, true );
 			} 
+		}
+		// begin revert anchor if slider change denied
+		if (!is_ok){
+			if(anchor_map_previous){
+				$.uriAnchor.setAnchor(anchor_map_previous,null,true);
+				stateMap.anchor_map = anchor_map_previous;
+			}else{
+				delete anchor_map_proposed.chat;
+				$uriAnchor.setAnchor(anchor_map_proposed, null, true);
+			}
 		}
 		return false;
 	}
     // End adjust chat component if changed
 
 	// END EVENT HANDLERS
-
+    // BEGIN CALLBACKS
+    	// begin callback method/setChatAnchor
+    	// purpose: change the chat component of the anchor
+    	// Arguments:position_type- may be 'closed' or 'opened'
+    	// action: changes the URI anchor parameter 'chat' to the requested value 
+    	setChatAnchor = function(position_type){
+    		return changeAnchorPart({chat:position_type});
+    	};
+    // END CALLBACKS
 	// BEGIN PUBLIC METHODS
 	initModule = function($container){
 		stateMap.$container = $container;
 		$container.html(configMap.main_html);
 		setJqueryMap();
-        // Initialize chat slider and bind click handler
-		stateMap.is_chat_retracted = true;
-		jqueryMap.$chat.attr('title', configMap.chat_retracted_title).click(onClickChat);
+        // configure uriAbchor to use our schema
 		$.uriAnchor.configModule({ 
 			schema_map : configMap.anchor_schema_map 
 		});
 		// configure and initialize feature modules
-		spa.chat.configModule({});
-		spa.chat.initModule(jqueryMap.$chat);
-		$(window).bind( 'hashchange', onHashchange ).trigger( 'hashchange' );
+		spa.chat.configModule({
+			set_chat_anchor : setChatAnchor,
+			chat_model : spa.model.chat,
+			people_model : spa.model.people
+		});
+		spa.chat.initModule(jqueryMap.$container);
+		$(window).bind('resize', onResizer)
+		         .bind( 'hashchange', onHashchange )
+		         .trigger( 'hashchange' );
 	}
 	return {initModule: initModule};
 	// END PUBLIC METHODS
